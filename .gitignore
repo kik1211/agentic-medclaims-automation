@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+build/
+coverage/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Databases & local persistent storage
+*.db
+*.sqlite
+*.sqlite3
+backend/claimpilot.db
+uploads/
+backend/uploads/
+
+# Logs & OS metadata
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
