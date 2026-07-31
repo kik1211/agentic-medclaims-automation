@@ -1,0 +1,196 @@
+{
+  "name": "ClaimPilot India End-to-End Orchestration Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "claim-event",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "id": "node-1"
+    },
+    {
+      "parameters": {
+        "url": "={{ $node[\"Webhook Trigger\"].json[\"backendUrl\"] }}/api/documents/{{ $node[\"Webhook Trigger\"].json[\"documentId\"] }}/ocr",
+        "options": {},
+        "requestMethod": "POST"
+      },
+      "name": "Trigger OCR Extraction",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [480, 300],
+      "id": "node-2"
+    },
+    {
+      "parameters": {
+        "url": "={{ $node[\"Webhook Trigger\"].json[\"backendUrl\"] }}/api/claims/{{ $node[\"Webhook Trigger\"].json[\"claimId\"] }}/clinical-extract",
+        "options": {},
+        "requestMethod": "POST"
+      },
+      "name": "Trigger Clinical LLM Structuring",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [700, 300],
+      "id": "node-3"
+    },
+    {
+      "parameters": {
+        "url": "={{ $node[\"Webhook Trigger\"].json[\"backendUrl\"] }}/api/claims/{{ $node[\"Webhook Trigger\"].json[\"claimId\"] }}/coding",
+        "options": {},
+        "requestMethod": "POST"
+      },
+      "name": "Trigger ICD-10 & CPT Auto-Coding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [920, 300],
+      "id": "node-4"
+    },
+    {
+      "parameters": {
+        "url": "={{ $node[\"Webhook Trigger\"].json[\"backendUrl\"] }}/api/claims/{{ $node[\"Webhook Trigger\"].json[\"claimId\"] }}/validate",
+        "options": {},
+        "requestMethod": "POST"
+      },
+      "name": "Trigger Claim Validation Engine",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1140, 300],
+      "id": "node-5"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $node[\"Trigger Claim Validation Engine\"].json[\"data\"][\"data\"][\"approval_required\"] }}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "name": "Check Human Review Requirement",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1360, 300],
+      "id": "node-6"
+    },
+    {
+      "parameters": {
+        "url": "={{ $node[\"Webhook Trigger\"].json[\"backendUrl\"] }}/api/claims/{{ $node[\"Webhook Trigger\"].json[\"claimId\"] }}/submit",
+        "options": {},
+        "requestMethod": "POST"
+      },
+      "name": "Trigger Playwright Portal Submission",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1600, 200],
+      "id": "node-7"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "READY_FOR_REVIEW"
+            },
+            {
+              "name": "message",
+              "value": "Claim routed to Human Review queue"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Route to Human Review Queue",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [1600, 420],
+      "id": "node-8"
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Trigger OCR Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger OCR Extraction": {
+      "main": [
+        [
+          {
+            "node": "Trigger Clinical LLM Structuring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Clinical LLM Structuring": {
+      "main": [
+        [
+          {
+            "node": "Trigger ICD-10 & CPT Auto-Coding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger ICD-10 & CPT Auto-Coding": {
+      "main": [
+        [
+          {
+            "node": "Trigger Claim Validation Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Claim Validation Engine": {
+      "main": [
+        [
+          {
+            "node": "Check Human Review Requirement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Human Review Requirement": {
+      "main": [
+        [
+          {
+            "node": "Trigger Playwright Portal Submission",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route to Human Review Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
