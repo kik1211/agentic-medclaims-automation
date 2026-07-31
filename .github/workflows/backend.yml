@@ -1,0 +1,33 @@
+name: Backend CI Pipeline
+
+on:
+  push:
+    branches: [ main, master, dev ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: cd backend && npm ci
+
+      - name: Run TypeScript Typecheck
+        run: cd backend && npm run typecheck
+
+      - name: Run Database Migration Validation
+        run: cd backend && npm run migrate
+
+      - name: Build Production Transpilation
+        run: cd backend && npm run build

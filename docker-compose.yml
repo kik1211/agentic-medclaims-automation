@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DB_DRIVER=postgres
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_DATABASE=claimpilot
+      - PG_USER=postgres
+      - PG_PASSWORD=postgres_secure_pass
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=super_secret_production_jwt_key_claimpilot_2026
+    depends_on:
+      - postgres
+      - redis
+    restart: always
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=claimpilot
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres_secure_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    restart: always
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+    volumes:
+      - n8ndata:/home/node/.n8n
+    restart: always
+
+volumes:
+  pgdata:
+  redisdata:
+  n8ndata:

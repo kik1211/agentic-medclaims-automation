@@ -1,0 +1,27 @@
+# Dockerfile.backend - Production Container Build for ClaimPilot Backend
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY backend/package*.json ./
+RUN npm ci
+
+COPY backend/ ./
+RUN npm run build
+
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3001
+
+COPY backend/package*.json ./
+RUN npm ci --only=production
+
+COPY --from=builder /app/dist ./dist
+COPY backend/src/database/schema.sql ./dist/database/schema.sql
+
+EXPOSE 3001
+
+CMD ["node", "dist/server.js"]
