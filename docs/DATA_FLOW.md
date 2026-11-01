@@ -1,159 +1,203 @@
-# Data Flow
+# ClaimPilot India — Data Flow Specification
 
-> A description of how data moves through the application — and where it does not.
-
----
-
-## Current State: No Data Flow
-
-In the current prototype, there is no data flow. All "data" is hardcoded JSX strings rendered directly into components. There is no:
-
-- State management
-- Props drilling
-- Context API
-- Data fetching
-- Form submission
-- Database reads/writes
-- API calls
-
-Every piece of information displayed in the UI is a literal string in the source code.
+This document details the end-to-end flow of data through the ClaimPilot platform, tracing inputs from initial document upload through OCR extraction, clinical structuring, medical coding, policy validation, human review, and portal submission.
 
 ---
 
-## Static Data Locations
+## 1. High-Level Data Flow Sequence
 
-### Dashboard KPIs (Screen2 — DashboardScreens.tsx)
-```
-Claims This Month: 1,284
-Approval Rate: 94.2%
-Revenue Recovered: ₹4.2Cr
-Avg Processing Time: 14m
-```
-Source: Hardcoded in JSX, lines 15–31 of DashboardScreens.tsx
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Hospital Operator / Doctor
+    participant UI as React Frontend
+    participant API as Express API Gateway
+    participant OCR as OCR Service (Tesseract/pdf-parse)
+    participant LLM as Gemini Service
+    participant Code as Coding Service (ICD/CPT)
+    participant Val as Validation Engine
+    participant Rev as Review Service
+    participant Sub as Portal Adapter
+    participant DB as SQLite (claimpilot.db)
 
-### Claims Table (Screen6 — PipelineScreens.tsx)
-```javascript
-{ name: 'Rajesh Kumar', age: 45, scheme: 'Star Health', stage: 'Pre-Auth', proc: 'Appendectomy', req: '₹45,000', app: '-', status: 'Extracting', days: 0 },
-{ name: 'Meena Devi', age: 62, scheme: 'CMCHIS', stage: 'Pre-Auth', proc: 'Cataract', ... },
-... 7 more rows
-```
-Source: Inline array in PipelineScreens.tsx, lines 53–62
+    User->>UI: 1. Create Claim & Upload Document
+    UI->>API: POST /api/claims & POST /api/documents/upload
+    API->>DB: Insert Claim (DRAFT) & Document records
+    API-->>OCR: Enqueue Document ID for OCR
+    OCR->>DB: Update document with ocr_text & status (OCR_COMPLETE)
 
-### Activity Feed (Screen2)
-```javascript
-[
-  { time: '10:42 AM', action: 'Pre-auth submitted', details: 'Rajesh Kumar - Star Health' },
-  { time: '10:38 AM', action: 'Claim approved', details: 'Meena Devi - CMCHIS' },
-  ...
-]
-```
-Source: Inline array in DashboardScreens.tsx, lines 91–96
+    UI->>API: 2. Trigger Clinical Structuring
+    API->>DB: Fetch completed OCR texts
+    API->>LLM: Prompt Gemini with combined text (or regex fallback)
+    LLM-->>API: Structured Clinical JSON
+    API->>DB: Persist clinical_json & status (CLINICAL_EXTRACTED)
 
-### Denial Data (Screen7 — DenialScreens.tsx)
-```
-Total Denials: 142 (11% of claims)
-Successfully Recovered: 89 (62% recovery rate)
-Revenue Recovered: ₹1.8Cr
-```
-Source: Hardcoded in JSX
+    UI->>API: 3. Trigger Medical Coding
+    API->>Code: Map clinical diagnosis & procedures to codes
+    Code-->>API: Primary/Secondary ICD-10 & CPT codes with confidence
+    API->>DB: Persist coding_json & status (AUTO_CODED)
 
-### Insurer List (Screen9 — Settings)
-```
-Star Health — API — Connected — Today, 09:00 AM
-HDFC Ergo — RPA — Connected — Yesterday
-```
-Source: Hardcoded table rows
+    UI->>API: 4. Trigger Policy Validation
+    API->>Val: Run deterministic policy rules on claim data
+    Val-->>API: Validation status & approval triggers
+    API->>DB: Persist validation_json & status (VALIDATED or READY_FOR_REVIEW)
 
----
+    alt Human Review Required
+        API-->>UI: Display Claim in Reviewer Queue
+        User->>UI: Review dossier & record decision
+        UI->>API: POST /api/review/:id/approve
+        API->>DB: Record review_history, audit_logs & status (APPROVED_BY_REVIEWER)
+    end
 
-## Navigation Data Flow (ArrowsOverlay)
-
-The only "data flow" in the application is the `connections` array that drives the SVG arrows:
-
-```typescript
-// In App.tsx
-const connections = [
-  { from: 'btn-login', to: 'screen-2' },
-  { from: 'nav-pre-auth', to: 'screen-3' },
-  ...33 total connections
-];
-```
-
-This flows into `ArrowsOverlay`:
-
-```
-connections[] → DOM queries (getElementById) → getBoundingClientRect() 
-    → coordinate calculation → useState(lines) → SVG <path> elements
-```
-
-This is the only state update in the entire application.
-
----
-
-## Intended Data Flow (Production Vision)
-
-### Claim Creation Flow
-```
-User uploads PDF → FormData POST → Backend API
-    → File stored (S3 / local disk)
-    → OCR job queued (Tesseract / AWS Textract)
-    → OCR result stored in DB
-    → LLM called (Gemini API) with OCR text
-    → Structured claim data extracted
-    → ICD-10 codes assigned
-    → Claim record created in PostgreSQL
-    → WebSocket event → Frontend updates claim status
-```
-
-### Human-in-the-Loop Flow
-```
-AI detects missing field → Missing fields list stored in DB
-    → Frontend polls / WebSocket receives event
-    → Screen12 (Missing Data) displayed with specific fields
-    → User fills fields → POST to /api/claims/{id}/complete
-    → Backend validates → Updates claim record
-    → Triggers next pipeline stage
-```
-
-### Denial Recovery Flow
-```
-Insurer API / portal returns rejection → n8n webhook triggered
-    → n8n workflow: parse rejection reason
-    → Gemini API: generate counter-appeal letter
-    → Human review screen (Screen14/15) populated with AI analysis
-    → Human approves → n8n triggers resubmission
-```
-
-### Dashboard Data Flow (Intended)
-```
-PostgreSQL aggregation query → Express API endpoint
-    → GET /api/dashboard/kpis
-    → React Query / SWR polling
-    → Dashboard KPI cards update in real-time
+    UI->>API: 5. Trigger Portal Submission
+    API->>Sub: Execute portal adapter
+    Sub-->>API: Portal reference & execution logs
+    API->>DB: Persist submission_reference, submission_json & status (SUBMITTED)
+    API-->>UI: Return final submission receipt
 ```
 
 ---
 
-## Environment Variables (Data Entry Points)
+## 2. Stage-by-Stage Data Transformation
 
-Two environment variables are documented but only one is used by the build:
+### Stage 1: Document Ingestion & Storage
+- **Input**: Multipart file upload (`PDF`, `PNG`, `JPEG`, max 20MB) accompanied by `claim_id` and `document_type`.
+- **Processing**:
+  - `DocumentController` saves the file to the local disk directory (`uploads/`).
+  - Creates a row in the `documents` table with `ocr_status = 'PENDING'`.
+  - Dispatches the `documentId` to `OcrWorkerQueue`.
+- **Output Record (`documents`)**:
+  ```json
+  {
+    "id": "doc_a1b2c3d4",
+    "claim_id": "clm_98765432",
+    "file_name": "discharge_summary.pdf",
+    "file_path": "uploads/discharge_summary_1722360000.pdf",
+    "mime_type": "application/pdf",
+    "ocr_status": "PENDING"
+  }
+  ```
 
-| Variable        | Used By                 | Current Effect                              |
-|-----------------|-------------------------|---------------------------------------------|
-| `GEMINI_API_KEY`| `vite.config.ts` inject | Injects into `process.env.GEMINI_API_KEY` but no code reads it |
-| `APP_URL`       | Not used anywhere       | Documented in `.env.example` but never referenced in code |
+### Stage 2: OCR Text Extraction
+- **Input**: Local file path on disk.
+- **Processing**:
+  - `TesseractService` inspects MIME type:
+    - If `application/pdf`, direct text streams are extracted via `pdf-parse`.
+    - If direct extraction produces empty text or for image payloads, `tesseract.js` worker processes the image with language model `eng`.
+- **Output Record (`documents`)**:
+  - `ocr_text`: Raw extracted plaintext.
+  - `ocr_status`: `'COMPLETED'` or `'FAILED'`.
+  - Updates associated claim status to `'OCR_COMPLETE'`.
 
----
+### Stage 3: Clinical Data Structuring
+- **Input**: Concatenated OCR text across all completed documents for the claim.
+- **Processing**:
+  - `ClinicalService` aggregates texts and formats the prompt via `PromptBuilder`.
+  - `GeminiService` invokes `@google/genai` (`gemini-2.5-flash`) requesting structured JSON.
+  - *Fallback*: If `GEMINI_API_KEY` is not set, a local regex heuristic parser extracts fields.
+  - `JsonValidator` verifies fields via Zod against `ClinicalDocumentDataSchema`.
+- **Output Data Structure (`claims.clinical_json`)**:
+  ```json
+  {
+    "patient_name": "Rajesh Kumar",
+    "patient_age": 45,
+    "gender": "MALE",
+    "hospital_name": "Sri Ramakrishna Hospital",
+    "doctor_name": "Dr. K. Swaminathan",
+    "admission_date": "2026-07-28",
+    "discharge_date": "2026-07-30",
+    "diagnosis": "Acute Appendicitis K35.80",
+    "procedures": ["Laparoscopic Appendectomy"],
+    "medications": ["IV Ceftriaxone 1g", "Paracetamol 500mg"],
+    "claim_amount": 65000,
+    "supporting_documents": ["Pre-Auth Form", "Lab Report", "Discharge Summary"],
+    "clinical_summary": "Patient presented with right lower quadrant abdominal pain..."
+  }
+  ```
+  - Claim status advances to `'CLINICAL_EXTRACTED'`.
 
-## Form Inputs (Data Capture)
+### Stage 4: Medical Auto-Coding
+- **Input**: `claims.clinical_json` (`diagnosis` string and `procedures` array).
+- **Processing**:
+  - `IcdService.mapDiagnosis`: Scans diagnosis string against ICD-10 dictionary terms and regex patterns (e.g. `K35.80`).
+  - `CptService.mapProcedures`: Scans procedures against CPT procedural dictionary (e.g. `44970`).
+- **Output Data Structure (`claims.coding_json`)**:
+  ```json
+  {
+    "primary_icd10": {
+      "code": "K35.80",
+      "description": "Unspecified acute appendicitis",
+      "confidence": 95
+    },
+    "secondary_icd10": [],
+    "cpt_codes": [
+      {
+        "code": "44970",
+        "description": "Laparoscopy, surgical, appendectomy",
+        "category": "Surgery / Digestive",
+        "confidence": 90
+      }
+    ],
+    "confidence_scores": {
+      "K35.80": 95,
+      "44970": 90
+    },
+    "coding_status": "COMPLETED"
+  }
+  ```
+  - Claim status advances to `'AUTO_CODED'`.
 
-All inputs in the application are **uncontrolled** React inputs (`defaultValue` only, no `value` + `onChange`). Nothing is captured, validated, or submitted.
+### Stage 5: Policy Validation & Human Review Routing
+- **Input**: Combined `clinical_json` and `coding_json`.
+- **Processing**:
+  - `ValidationRulesEngine` applies rules:
+    - Required demographic verification.
+    - Diagnosis and procedure code presence.
+    - Code confidence threshold checking (confidence >= 80%).
+    - Hospital tariff boundary checks (amount <= ₹500,000 for standard pre-auth).
+    - Supporting document completeness.
+- **Output Data Structure (`claims.validation_json`)**:
+  ```json
+  {
+    "validation_status": "PASSED",
+    "approval_required": false,
+    "warnings": [],
+    "rule_results": [
+      { "ruleId": "DEMOGRAPHICS_CHECK", "passed": true },
+      { "ruleId": "DIAGNOSIS_CODED", "passed": true },
+      { "ruleId": "CONFIDENCE_THRESHOLD", "passed": true }
+    ]
+  }
+  ```
+  - If `approval_required == false`, claim status advances to `'VALIDATED'`.
+  - If `approval_required == true` or warnings exist, claim status transitions to `'READY_FOR_REVIEW'`.
 
-Inputs present in the UI:
-- Login form: Hospital Name, Email, Password (Screen1)
-- Missing data fields: 3 inline inputs (Screen12)
-- Settings: Hospital profile, notification preferences (Screen9)
-- Add insurer: API key, endpoint, credentials (Screen16)
-- Pipeline search bar (Screen6)
+### Stage 6: Human Review Decision
+- **Input**: Human reviewer action via `POST /api/review/:claimId/approve` or `reject`.
+- **Processing**:
+  - Validates reviewer role (`REVIEWER`).
+  - Inserts entry into `review_history` (reviewer ID, decision, timestamp, comments).
+  - Inserts record into `audit_logs`.
+  - Claim status transitions to `'APPROVED_BY_REVIEWER'` or `'REJECTED_BY_REVIEWER'`.
 
-None of these inputs trigger any action or update any state.
+### Stage 7: Portal Submission
+- **Input**: Approved claim payload (`clinical_json`, `coding_json`, `insurer_code`).
+- **Processing**:
+  - `PlaywrightService` passes claim to `MockPortalAdapter`.
+  - Generates synthetic portal submission reference and logs.
+- **Output Data Structure (`claims.submission_json` & `claims.submission_reference`)**:
+  ```json
+  {
+    "portal_reference": "REF_SUB_LZ04B_CLM123",
+    "submission_status": "SUBMITTED",
+    "submitted_at": "2026-07-30T19:15:00.000Z",
+    "portal_name": "STAR_HEALTH_MOCK_PORTAL",
+    "submission_logs": [
+      "[2026-07-30T19:15:00.000Z] Submission started",
+      "[2026-07-30T19:15:00.100Z] Filling patient details: Rajesh Kumar",
+      "[2026-07-30T19:15:00.200Z] Populating ICD-10 (K35.80) and 1 CPT codes",
+      "[2026-07-30T19:15:00.300Z] Portal reference generated: REF_SUB_LZ04B_CLM123"
+    ]
+  }
+  ```
+  - Claim status advances to `'SUBMITTED'`.

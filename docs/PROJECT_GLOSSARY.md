@@ -122,7 +122,7 @@ A modern JavaScript build tool. Serves the React app during development and bund
 OpenAI's open-source speech-to-text model. Planned for converting doctor-patient audio consultations into medical transcripts. Not yet implemented.
 
 ### Wireframe
-A low-fidelity visual representation of a UI. In this project, the entire application IS the wireframe — a visual prototype intended for stakeholder review, not end-user operation.
+The initial visual layout of the application screens, implemented with thick borders and high-contrast styling to represent prototype screens.
 
 ---
 

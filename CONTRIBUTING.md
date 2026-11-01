@@ -7,8 +7,8 @@ Thank you for your interest in contributing to **ClaimPilot India**! We welcome 
 1. **Fork the Repository**: Create a personal fork on GitHub.
 2. **Clone your Fork**:
    ```bash
-   git clone https://github.com/your-username/Claim_bot_2.git
-   cd Claim_bot_2
+   git clone https://github.com/your-username/agentic-medclaims-automation.git
+   cd agentic-medclaims-automation
    ```
 3. **Create a Feature Branch**:
    ```bash
