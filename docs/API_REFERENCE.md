@@ -75,14 +75,18 @@ Standard error codes: `BAD_REQUEST` (400), `UNAUTHORIZED` (401), `FORBIDDEN` (40
 
 | Method | Endpoint | Auth | Description |
 | :--- | :--- | :---: | :--- |
-| `GET` | `/api/claims` | Yes | List claims with pagination and optional hospital filtering. |
+| `GET` | `/api/claims` | No | List all claim records. |
 | `POST` | `/api/claims` | No | Create a new claim in `DRAFT` state. |
-| `GET` | `/api/claims/:id` | Yes | Get full details of a specific claim. |
-| `PATCH` | `/api/claims/:id` | Yes | Update claim status or metadata fields. |
+| `GET` | `/api/claims/:id` | No | Get full details of a specific claim. |
+| `PATCH` | `/api/claims/:id` | No | Update claim status or metadata fields. |
+| `DELETE` | `/api/claims/:id` | No | Delete a claim record by ID. |
 | `POST` | `/api/claims/:id/clinical-extract` | Yes | Trigger clinical structuring from completed OCR texts. |
 | `POST` | `/api/claims/:id/coding` | Yes | Execute ICD-10 and CPT auto-coding on structured clinical data. |
 | `POST` | `/api/claims/:id/validate` | Yes | Run deterministic policy validation rules on claim. |
 | `POST` | `/api/claims/:id/submit` | Yes | Execute portal submission adapter and record reference. |
+
+> [!WARNING]
+> **Implementation Note — Authentication Hardening Required**: In the current main-branch implementation, the claim CRUD endpoints (`GET /api/claims`, `GET /api/claims/:id`, `POST /api/claims`, `PATCH /api/claims/:id`, and `DELETE /api/claims/:id`) do not apply `authenticate` middleware, and the claim router is mounted in `app.ts` without global authentication guards. While specialized pipeline sub-routes (`clinical-extract`, `coding`, `validate`, `submit`, `documents`) explicitly enforce JWT authentication, base CRUD operations are currently accessible without credentials and require authentication hardening.
 
 ### Documents & OCR (`/api/documents`)
 
