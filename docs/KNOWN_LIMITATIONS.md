@@ -1,142 +1,59 @@
-# Known Limitations
+# ClaimPilot India — Known Limitations & Technical Constraints
 
-> An honest technical assessment of every limitation in the current codebase. No exaggeration. No minimizing.
-
----
-
-## Architectural Limitations
-
-### L1: No Backend
-**Severity**: Critical  
-**Description**: The entire application is a static frontend with no server. There is no API, no database, no authentication, and no real processing.  
-**Consequence**: The application cannot perform any of the advertised operations (OCR, AI structuring, claim submission).
-
-### L2: No Client-Side Navigation
-**Severity**: High  
-**Description**: Buttons do not navigate between screens. The `connections[]` array only draws visual arrows. Clicking any button does nothing.  
-**Consequence**: The application cannot be used as an interactive product. It functions as a static wireframe only.
-
-### L3: No State Management
-**Severity**: High  
-**Description**: No `useState` exists in any screen component. No Context API. No Zustand/Redux. No form state.  
-**Consequence**: No user action persists anywhere in the application. Forms cannot be submitted, selections cannot be made.
-
-### L4: No Data Persistence
-**Severity**: High  
-**Description**: `better-sqlite3` is installed but never used. No localStorage, IndexedDB, or cookie usage.  
-**Consequence**: All data is hardcoded. No claim record survives a page refresh.
+This document provides an engineering evaluation of the current technical constraints, architectural trade-offs, and implementation boundaries of ClaimPilot India.
 
 ---
 
-## Security Limitations
+## 1. Architectural & Infrastructure Limitations
 
-### L5: API Key Exposed in Bundle
-**Severity**: High (production risk, low risk for current state)  
-**Description**: `vite.config.ts` injects `GEMINI_API_KEY` directly into the client JavaScript bundle via `define`:
-```typescript
-'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
-```
-Anyone who opens browser DevTools can extract the API key.  
-**Impact**: If the Gemini API key is real and the app is deployed publicly, the key will be compromised.  
-**Fix**: All Gemini API calls must be routed through a server-side API endpoint.
+### Single-Host SQLite Database
+- **Current State**: The operational database is SQLite (`claimpilot.db`) using `better-sqlite3` with Write-Ahead Logging (`WAL`).
+- **Limitation**: While well-suited for single-process deployments, development, and low-to-medium hospital concurrency, SQLite does not support distributed multi-instance horizontal scaling, network replication, or connection clustering.
+- **PostgreSQL Abstraction Status**: The `DatabaseAbstractionLayer` (`backend/src/config/postgres.ts`) provides configuration interfaces for PostgreSQL, but query execution currently runs against SQLite.
 
-### L6: No Authentication
-**Severity**: High (production risk)  
-**Description**: No login validation, no session, no JWT. The login button is purely visual.  
-**Consequence**: Any URL in the app is accessible to anyone.
-
-### L7: No Input Validation
-**Severity**: Medium  
-**Description**: All form inputs are uncontrolled and unvalidated. No sanitization, no type checking.
-
-### L8: No HTTPS Enforcement
-**Severity**: Low (development only)  
-**Description**: The dev server runs over HTTP. Production deployment must enforce HTTPS.
+### In-Memory Task Processing & Queue Persistence
+- **Current State**: Background asynchronous execution (such as document OCR extraction) is handled via `OcrWorkerQueue` (`backend/src/workers/ocr.worker.ts`) using Node.js `setImmediate`.
+- **Limitation**: Tasks are held in process memory. If the backend server restarts or crashes while jobs are queued, pending tasks are lost and must be re-triggered manually via `POST /api/documents/:id/ocr`.
+- **Redis / BullMQ Status**: The BullMQ queue architecture and Redis configuration (`backend/src/config/redis.ts`) exist as design templates. Redis currently operates in in-memory development fallback mode.
 
 ---
 
-## Data Integrity Limitations
+## 2. AI & Domain Service Limitations
 
-### L9: All Statistics Are Fabricated
-**Severity**: High (transparency risk)  
-**Description**: Every number shown in the dashboard is a hardcoded string:
-- "1,284 claims this month" — not real
-- "94.2% approval rate" — not real
-- "₹4.2Cr revenue recovered" — not real
-- "14m average processing time" — not real
-- "62% recovery rate via AI" — not real
+### Medical Coding via Static Dictionaries
+- **Current State**: `IcdService` and `CptService` map diagnoses and procedures using static TypeScript lookup tables (10 ICD-10 codes and 9 CPT codes) and basic regex string matching.
+- **Limitation**: Diagnostic coding does not utilize dynamic semantic vector search, full WHO ICD-10/11 databases, or licensed AMA CPT datasets. Diagnoses outside the dictionary map to generic fallback codes (`R69` for unspecified diagnosis, `99214` for evaluation/management).
 
-These numbers represent a plausible demo scenario, not real performance data.  
-**Risk**: If shown to investors or users without context, these numbers could be misleading.
+### Mocked Portal Submission Automation
+- **Current State**: The portal submission layer implements `IPortalAdapter` (`backend/src/submission/portal.adapter.ts`) using `MockPortalAdapter`.
+- **Limitation**: The adapter logs simulated submission steps and returns a generated synthetic reference number (`REF_SUB_<timestamp>_<id>`). Live browser automation interacting with actual insurer portals (e.g. Star Health, PM-JAY) using Playwright headless sessions is not implemented.
 
-### L10: Patient Data Is Fictional
-**Description**: All patient names (Rajesh Kumar, Meena Devi, etc.) and claim details are fictional and hardcoded. No HIPAA/DPDPA compliance considerations have been implemented because no real patient data is handled.
+### Speech Recognition (Whisper) Unimplemented
+- **Current State**: Speech recognition is referenced in type definitions (`whisper_model`).
+- **Limitation**: There is no audio recording, file upload pipeline, or speech-to-text inference integration (OpenAI Whisper or local `whisper.cpp`). Ingestion is currently restricted to document uploads (`PDF`, `PNG`, `JPEG`).
 
----
-
-## Code Quality Limitations
-
-### L11: All Props Typed as `any`
-**Severity**: Medium  
-**Description**: Every component in `WireframeUI.tsx` uses `: any` for its props type. TypeScript provides zero type safety on component interfaces.
-
-### L12: `ArrowsOverlay` Uses Direct DOM Queries
-**Severity**: Low  
-**Description**: `document.getElementById()` is used instead of React refs. This can fail if elements are not rendered when the effect runs.  
-**Known timing workaround**: The 1-second `setTimeout` is a hack to handle delayed rendering.
-
-### L13: No Error Handling Anywhere
-**Severity**: Medium  
-**Description**: No try-catch blocks, no error boundaries, no error states in any component.
-
-### L14: No Tests
-**Severity**: High (for production readiness)  
-**Description**: Zero test files. No unit tests, no integration tests, no end-to-end tests.
-
-### L15: No Linting Beyond TypeScript
-**Severity**: Low-Medium  
-**Description**: `npm run lint` only runs `tsc --noEmit`. No ESLint, Prettier, or style enforcement. Code style is inconsistent (some arrow functions, some const declarations).
+### Denial Analysis & Appeals
+- **Current State**: Denial management exists as frontend wireframe screens (`src/pages/DenialPage.tsx`, `src/screens/DenialScreens.tsx`).
+- **Limitation**: The backend does not implement automated denial prediction, root-cause categorization, or LLM-generated appeal letters.
 
 ---
 
-## UX Limitations
+## 3. Security & Operational Limitations
 
-### L16: Non-Responsive Design
-**Severity**: High  
-**Description**: Every screen is fixed at `1024×768px`. The canvas itself is `8000×6000px`. The application is completely unusable on mobile or tablet devices.
+### Client-Side API Key Exposure Risk in Vite Configuration
+- **Current State**: The frontend build script (`vite.config.ts`) defines:
+  ```typescript
+  define: {
+    'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+  }
+  ```
+- **Limitation**: If `GEMINI_API_KEY` is present in the root `.env` during `npm run build`, Vite will inject the raw API key directly into the public client JavaScript bundle.
+- **Mitigation**: All production LLM extraction calls are executed server-side via `backend/src/llm/gemini.service.ts`. The root `.env` should not contain the Gemini API key; it should only be configured in `backend/.env`.
 
-### L17: No Loading States
-**Severity**: Medium  
-**Description**: The processing state (Screen3A) shows a spinner, but it's purely decorative. No real async operation is represented.
+### Real-Time Telemetry & WebSocket Updates
+- **Current State**: Claim status transitions and dashboard metrics are fetched via standard HTTP REST queries.
+- **Limitation**: Real-time push notifications over WebSockets or Server-Sent Events (SSE) are not implemented. Users must refresh or poll endpoints to observe state changes.
 
-### L18: No Real-Time Updates
-**Severity**: Medium  
-**Description**: The "Agent Activity Feed" and pipeline status are static. In a real system, these would update in real-time via WebSocket.
-
-### L19: Hospital Name Hardcoded
-**Severity**: Medium  
-**Description**: "Sri Ramakrishna Hospital, Coimbatore" is hardcoded in `WireHeader`. Switching hospitals requires a code change.
-
----
-
-## Operational Limitations
-
-### L20: No Logging
-**Severity**: Medium  
-**Description**: No structured logging anywhere in the application.
-
-### L21: No Monitoring
-**Severity**: Low (prototype concern)  
-**Description**: No error tracking (Sentry), no performance monitoring, no uptime monitoring.
-
-### L22: `npm run clean` Fails on Windows
-**Severity**: Low  
-**Description**: The clean script `rm -rf dist` is a Unix command. On Windows (this machine), use `Remove-Item -Recurse -Force dist` instead.
-
-### L23: No Docker Configuration
-**Severity**: Low  
-**Description**: No `Dockerfile` or `docker-compose.yml`. Required for reproducible deployment.
-
-### L24: Duplicate `vite` in package.json
-**Severity**: Low  
-**Description**: `vite` appears in both `dependencies` and `devDependencies`. Only one entry is needed (typically `devDependencies`).
+### Automated Test Coverage
+- **Current State**: Testing is currently performed via manual walkthroughs and API probe verification (`/health`, `/ready`, `/metrics`).
+- **Limitation**: Automated unit test suites (Vitest/Jest), integration test suites, and end-to-end browser automation suites are not yet established in the repository.

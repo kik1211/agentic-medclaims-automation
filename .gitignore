@@ -25,3 +25,8 @@ backend/uploads/
 Thumbs.db
 .vscode/
 .idea/
+
+# Private interview and preparation documents
+docs/INTERVIEW_GUIDE.md
+docs/PROJECT_MASTERY_GUIDE.md
+docs/RESUME_TRACEABILITY.md

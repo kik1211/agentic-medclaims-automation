@@ -11,8 +11,8 @@
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/Claim_bot_2.git
-   cd Claim_bot_2
+   git clone https://github.com/kik1211/agentic-medclaims-automation.git
+   cd agentic-medclaims-automation
    ```
 
 2. Configure environment variables:
