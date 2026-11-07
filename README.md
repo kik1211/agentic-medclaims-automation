@@ -1,5 +1,7 @@
 # ClaimPilot India
 
+[![Backend CI](https://github.com/kik1211/agentic-medclaims-automation/actions/workflows/backend.yml/badge.svg?branch=main)](https://github.com/kik1211/agentic-medclaims-automation/actions/workflows/backend.yml)
+[![Frontend CI](https://github.com/kik1211/agentic-medclaims-automation/actions/workflows/frontend.yml/badge.svg?branch=main)](https://github.com/kik1211/agentic-medclaims-automation/actions/workflows/frontend.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18.0-61dafb.svg)](https://react.dev/)
 [![Express](https://img.shields.io/badge/Express-4.21-000000.svg)](https://expressjs.com/)
